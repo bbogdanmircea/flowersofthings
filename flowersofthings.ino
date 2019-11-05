@@ -1,12 +1,13 @@
 
 /*__________________________________________________________Libraries__________________________________________________________*/
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+#include <WiFi.h>
+#include <WiFiMulti.h>
 #include <WiFiUdp.h>
+#include <WebServer.h>
 #include <ArduinoOTA.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
-#include <FS.h>
+#include <ESPmDNS.h>
+#include "FS.h"
+#include "SPIFFS.h"
 #include <pins_arduino.h>
 #include <ArduinoJson.h>
 
@@ -16,6 +17,7 @@
 
 #include "DHT.h"
 #define DHTPIN 4     // what digital pin the DHT22 is conected to
+#define D1 18
 #define DHTTYPE DHT22   // there are multiple kinds of DHT sensors
 DHT dht(DHTPIN, DHTTYPE);
 float h = 0;  // variable for air humidity
@@ -26,11 +28,11 @@ int waterduration = 10; // how long should one watering period last
 int waitingtime = 30; // how long should be waited after one watering
 uint32_t lastwater = 0; // saves the timestamp of the last watering
 
-ESP8266WebServer server(80);             // create a web server on port 80
+WebServer server(80);             // create a web server on port 80
 
 File fsUploadFile;                                    // a File variable to temporarily store the received file
 
-ESP8266WiFiMulti wifiMulti;    // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+WiFiMulti wifiMulti;    // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 
 const char *OTAName = "ESP8266";         // A name and a password for the OTA service
 const char *OTAPassword = "esp8266";
@@ -46,7 +48,100 @@ const int NTP_PACKET_SIZE = 48;          // NTP time stamp is in the first 48 by
 
 byte packetBuffer[NTP_PACKET_SIZE];      // A buffer to hold incoming and outgoing packets
 
+/*__________________________________________________________SPPIF_______________________________________________________*/
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
+    Serial.printf("Listing directory: %s\r\n", dirname);
 
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("- failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println(" - not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.println(file.name());
+            if(levels){
+                listDir(fs, file.name(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("\tSIZE: ");
+            Serial.println(file.size());
+        }
+        file = root.openNextFile();
+    }
+}
+
+void readFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\r\n", path);
+
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed to open file for reading");
+        return;
+    }
+
+    Serial.println("- read from file:");
+    while(file.available()){
+        Serial.write(file.read());
+    }
+}
+
+void writeFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Writing file: %s\r\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("- failed to open file for writing");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- file written");
+    } else {
+        Serial.println("- frite failed");
+    }
+}
+
+void appendFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Appending to file: %s\r\n", path);
+
+    File file = fs.open(path, FILE_APPEND);
+    if(!file){
+        Serial.println("- failed to open file for appending");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- message appended");
+    } else {
+        Serial.println("- append failed");
+    }
+}
+
+void renameFile(fs::FS &fs, const char * path1, const char * path2){
+    Serial.printf("Renaming file %s to %s\r\n", path1, path2);
+    if (fs.rename(path1, path2)) {
+        Serial.println("- file renamed");
+    } else {
+        Serial.println("- rename failed");
+    }
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+    Serial.printf("Deleting file: %s\r\n", path);
+    if(fs.remove(path)){
+        Serial.println("- file deleted");
+    } else {
+        Serial.println("- delete failed");
+    }
+}
 /*__________________________________________________________Config_file__________________________________________________________*/
 bool loadConfig() {
   File configFile = SPIFFS.open("/config.json", "r");
@@ -69,13 +164,14 @@ bool loadConfig() {
   // use configFile.readString instead.
   configFile.readBytes(buf.get(), size);
 
-  StaticJsonBuffer<200> jsonBuffer;
-  JsonObject& json = jsonBuffer.parseObject(buf.get());
-
-  if (!json.success()) {
-    Serial.println("Failed to parse config file");
-    return false;
-  }
+//  StaticJsonBuffer<200> jsonBuffer;
+//  JsonObject& json = jsonBuffer.parseObject(buf.get());
+//
+//  if (!json.success()) {
+//    Serial.println("Failed to parse config file");
+//    return false;
+//  }
+  JsonObject json;
 
   const String hl = json["humiditylimit"];
   humiditylimit = hl.toInt();
@@ -164,7 +260,7 @@ void loop() {
   } else if ((millis() - lastNTPResponse) > 24UL * ONE_HOUR) {
     Serial.println("More than 24 hours since last NTP response. Rebooting.");
     Serial.flush();
-    ESP.reset();
+    ESP.restart();
   }
 
   if (timeUNIX != 0) {
@@ -232,7 +328,7 @@ void loop() {
     delay(500);
   }
 
-  server.handleClient();                      // run the server
+//WiFiClient client = server.available();     // listen for incoming clients
   ArduinoOTA.handle();                        // listen for OTA events
 }
 
@@ -252,13 +348,14 @@ void startWiFi() { // Try to connect to some given access points. Then wait for 
   Serial.print("IP address:\t");
   Serial.print(WiFi.localIP());            // Send the IP address of the ESP8266 to the computer
   Serial.println("\r\n");
+server.begin();
 }
 
 void startUDP() {
   Serial.println("Starting UDP");
-  UDP.begin(123);                          // Start listening for UDP messages to port 123
+UDP.beginPacket("192.168.0.255",123);                          // Start listening for UDP 
   Serial.print("Local port:\t");
-  Serial.println(UDP.localPort());
+//  Serial.println(UDP.localPort());
 }
 
 void startOTA() { // Start the OTA service
@@ -290,12 +387,7 @@ void startSPIFFS() { // Start the SPIFFS and list all contents
   SPIFFS.begin();                             // Start the SPI Flash File System (SPIFFS)
   Serial.println("SPIFFS started. Contents:");
   {
-    Dir dir = SPIFFS.openDir("/");
-    while (dir.next()) {                      // List the file system contents
-      String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
-      Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
-    }
+   listDir(SPIFFS, "/", 0);
     Serial.printf("\n");
   }
 
@@ -453,9 +545,9 @@ void water_plants(String plant, int duration) {
          //digitalWrite(D2, 1); // switch all valves
          //digitalWrite(D3, 1); // switch all valves
          //delay(250); //wait
-         digitalWrite(D1, 1); // turn on pump
+        //digitalWrite(D1, 1); // turn on pump
          delay(duration*250);
-         digitalWrite(D1, 0);
+        //digitalWrite(D1, 0);
       }
 
 if (plant == "2") {
@@ -544,32 +636,13 @@ void changeConfig(String key,int var){
     Serial.println("Config file size is too large");
   }
 
-  // Allocate a buffer to store contents of the file.
-  std::unique_ptr<char[]> buf(new char[size]);
-
-  // We don't use String here because ArduinoJson library requires the input
-  // buffer to be mutable. If you don't use ArduinoJson, you may as well
-  // use configFile.readString instead.
-  configFile.readBytes(buf.get(), size);
-
-  StaticJsonBuffer<200> jsonBuffer;
-  JsonObject& json = jsonBuffer.parseObject(buf.get());
-
-  if (!json.success()) {
-    Serial.println("Failed to parse config file");
-  }
 
   Serial.println(key+String(var));
-  json[key] = String(var);
 
-  if (!configFile) {
-    Serial.println("Failed to open config file for writing");
-  }
 
   SPIFFS.remove("/config.json");
   File newconfigFile = SPIFFS.open("/config.json", "w");
 
-  json.printTo(newconfigFile);
 
   }
 
