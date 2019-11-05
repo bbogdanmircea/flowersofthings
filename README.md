@@ -1,6 +1,6 @@
 # flowers of things
 
-Controller for watering your plants powered by an ESP8266. Controlls soil humidity with a capacitive soil moisture sensor and waters plants accordingly. Watering and soil humidity can be supervised in the browser.
+Controller for watering your plants powered by an ESP32. Controls soil humidity with a capacitive soil moisture sensor and waters plants accordingly. Watering and soil humidity can be supervised in the browser.
 
 <p align="center">
   <img src="images/flowersofthings.jpg"
@@ -19,18 +19,11 @@ Schematic diagram:
 
 How to run:
 
-* Install Arduino IDE (in this case 1.8.5) and add [ESP8266FS](https://github.com/esp8266/arduino-esp8266fs-plugin) in the Arduino tools folder (create it if it does not exist: 'Arduino/tools/ESP8266FS/tool/esp8266fs.jar'). This way after a restart of the Arduino IDE "ESP8266 Sketch Data Upload" should show up in tools.
+* Install Arduino IDE (in this case 1.8.5) and add ESP32FS. This way after a restart of the Arduino IDE "ESP32 Sketch Data Upload" should show up in tools.
 * Libraries needed for running 'flowers of things'.
 
 ```
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
-#include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
-#include <FS.h>
-#include <pins_arduino.h>
+
 ```
 * Provide SSID and password for internet connection (needed for timestamp) in the sketch. Don't forget to change the OTA password.
 * Set parameters for watering in '/data/config.json'
