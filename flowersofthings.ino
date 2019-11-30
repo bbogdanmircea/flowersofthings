@@ -13,18 +13,18 @@
 
 /*__________________________________________________________General_things__________________________________________________________*/
 #define ONE_HOUR 3600000UL
-
-
 #include "DHT.h"
-#define DHTPIN 4     // what digital pin the DHT22 is conected to
-#define D1 18
+#define DHTPIN 13     // what digital pin the DHT22 is connected to
+#define D1 2 // pin for Pump1 on LED0
 #define DHTTYPE DHT22   // there are multiple kinds of DHT sensors
 
+const int led = 2;  // LED0 on board is connected to pin D2
+
+// Wifi login
 const char *ssid = "TP-LINK_8EFC";
 const char *password = "ABCDEFGHIJ";
 
-
-DHT dht(DHTPIN, DHTTYPE);
+DHT dht(DHTPIN, DHTTYPE); // DHT sensor declaration
 float h = 0;  // variable for air humidity
 float t = 0; // variable for air temperature
 
@@ -33,25 +33,25 @@ int waterduration = 10; // how long should one watering period last
 int waitingtime = 30; // how long should be waited after one watering
 uint32_t lastwater = 0; // saves the timestamp of the last watering
 
-WebServer server(80);             // create a web server on port 80
+WebServer server(80); // create a web server on port 80
 
-File fsUploadFile;                                    // a File variable to temporarily store the received file
+File fsUploadFile; // a File variable to temporarily store the received file
 
-WiFiMulti wifiMulti;    // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+// A name and a password for the OTA service
+const char *OTAName = "ESP32";         
+const char *OTAPassword = "ESP32";
+// Domain name for the mDNS responder
+const char* mdnsName = "esp32";
 
-const char *OTAName = "ESP8266";         // A name and a password for the OTA service
-const char *OTAPassword = "esp8266";
+WiFiUDP UDP;// Create an instance of the WiFiUDP class to send and receive UDP messages
 
-const char* mdnsName = "esp8266";        // Domain name for the mDNS responder
-
-WiFiUDP UDP;                   // Create an instance of the WiFiUDP class to send and receive UDP messages
-
-IPAddress timeServerIP;        // The time.nist.gov NTP server's IP address
+// NTP related variables
+IPAddress timeServerIP;// The time.nist.gov NTP server's IP address
 const char* ntpServerName = "time.nist.gov";
 
-const int NTP_PACKET_SIZE = 48;          // NTP time stamp is in the first 48 bytes of the message
+const int NTP_PACKET_SIZE = 48;// NTP time stamp is in the first 48 bytes of the message
 
-byte packetBuffer[NTP_PACKET_SIZE];      // A buffer to hold incoming and outgoing packets
+byte packetBuffer[NTP_PACKET_SIZE];// A buffer to hold incoming and outgoing packets
 
 /*__________________________________________________________SPPIF_______________________________________________________*/
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
@@ -179,25 +179,56 @@ bool loadConfig() {
   JsonObject json;
 
   const String hl = json["humiditylimit"];
-  humiditylimit = hl.toInt();
+  int humiditylimit_tmp = hl.toInt(); // read humididty limit from json
+  if (humiditylimit_tmp == 0) {
+    Serial.printf("Humidity limit read = %d not valid \n", humiditylimit_tmp);
+    Serial.printf("Humidity limit default set to = %d \n", humiditylimit);
+  } else {
+    Serial.printf("Humidity limit read = %d \n", humiditylimit_tmp);
+    humiditylimit = humiditylimit_tmp;
+    Serial.printf("Humidity limit default set to = %d \n", humiditylimit);    
+  }
 
- const String wd = json["waterduration"];
-  waterduration = wd.toInt();
+ const String wd = json["waterduration"]; // read waterduration from json
+  int waterduration_tmp = wd.toInt();
+  if (waterduration_tmp == 0) {
+    Serial.printf("Water duration limit read = %d not valid \n", waterduration_tmp);
+    Serial.printf("Water duration default set to = %d \n", waterduration);
+  } else {
+    Serial.printf("Water duration limit read = %d not valid \n", waterduration_tmp);
+    waterduration = waterduration_tmp;
+    Serial.printf("Water duration default set to = %d \n", waterduration);    
+  }
 
-const String wt = json["waitingtime"];
-  waitingtime = wt.toInt();
+const String wt = json["waitingtime"]; // read waitingtime from json
+  int waitingtime_tmp = wt.toInt();
+  if (waitingtime_tmp == 0) {
+    Serial.printf("Waiting time limit read = %d not valid \n", waitingtime_tmp);
+    Serial.printf("Waiting time default set to = %d \n", waitingtime);
+  } else {
+    Serial.printf("Waiting time limit read = %d not valid \n", waitingtime_tmp);
+    waitingtime = waitingtime_tmp;
+    Serial.printf("Waiting time default set to = %d \n", waitingtime);    
+  }
 
 const String lw = json["lastwater"];
-  lastwater = lw.toInt();
-
+  int lastwater_tmp = lw.toInt();
+  if (lastwater_tmp == 0) {
+    Serial.printf("Last water limit read = %d not valid \n", lastwater_tmp);
+    Serial.printf("Last water default set to = %d \n", lastwater);
+  } else {
+    Serial.printf("Last water limit read = %d not valid \n", lastwater_tmp);
+    lastwater = lastwater_tmp;
+    Serial.printf("Last water default set to = %d \n", lastwater);    
+  }
 
   // Real world application would store these values in some variables for
   // later use.
-Serial.println("values in config.json");
-  Serial.println(humiditylimit);
-  Serial.println(waterduration);
-  Serial.println(waitingtime);
-  Serial.println(lastwater);
+Serial.println("Values read from config.json: \n");
+  Serial.printf("Humidity limit: %d \n",humiditylimit);
+  Serial.printf("Water duration: %d \n",waterduration);
+  Serial.printf("Waiting time: %d \n",waitingtime);
+  Serial.printf("Last water: %d \n",lastwater);
   return true;
 }
 
@@ -247,10 +278,44 @@ void startMDNS() { // Start the mDNS responder
     Serial.println("mDNS responder started");
 }
 
+void handleRoot() {
+  digitalWrite(led, 1);
+  char temp[400];
+  int sec = millis() / 1000;
+  int min = sec / 60;
+  int hr = min / 60;
+
+  snprintf(temp, 400,
+
+           "<html>\
+  <head>\
+    <meta http-equiv='refresh' content='5'/>\
+    <title>ESP32 Demo</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>Hello from ESP32!</h1>\
+    <p>Uptime: %02d:%02d:%02d</p>\
+    <img src=\"/test.svg\" />\
+  </body>\
+</html>",
+
+           hr, min % 60, sec % 60
+          );
+  server.send(200, "text/html", temp);
+  delay(500);
+  digitalWrite(led, 0);
+}
+
 void startServer() { // Start a HTTP server with a file read handler and an upload handler
-/*  server.on("/edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
-    server.send(200, "text/plain", "");
+  /*
+    server.on("/edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
+      server.send(200, "text/plain", "");
   }, handleFileUpload);                       // go to 'handleFileUpload'
+  */
+    server.on("/", handleRoot);
 
     server.on("/water", handleWater);
     server.on("/soil", handleSoil);
@@ -259,10 +324,8 @@ void startServer() { // Start a HTTP server with a file read handler and an uplo
     server.on("/setwaterduration", handleSetWaterDuration);
     server.on("/setwaiting", handleSetWaiting);
     server.on("/sethumidity", handleSetHumidity);
-*/
-  server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
-  // and check if the file exists
 
+  server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
   server.begin();                             // start the HTTP server
   Serial.println("HTTP server started.");
 }
@@ -321,138 +384,6 @@ void startSPIFFS() { // Start the SPIFFS and list all contents
   }
 
 }
-
-void setup() {
-  Serial.begin(115200);        // Start the Serial communication to send messages to the computer
-  delay(10);
-  Serial.println("\r\n");
-
-  dht.begin(); // initalize DHT
-  pinMode(D1, OUTPUT); // initialize pin for pump
-
-  startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
-
-//  startOTA();                  // Start the OTA service
-
-//  startSPIFFS();               // Start the SPIFFS and list all contents
-
-  startMDNS();                 // Start the mDNS responder
-
-  startServer();               // Start a HTTP server with a file read handler and an upload handler
-    
-  // Add service to MDNS-SD
-  //MDNS.addService("http", "tcp", 80);
-
-  startUDP();                  // Start listening for UDP messages to port 123
-
-  WiFi.hostByName(ntpServerName, timeServerIP); // Get the IP address of the NTP server
-  Serial.print("Time server IP:\t");
-  Serial.println(timeServerIP);
-
-  sendNTPpacket(timeServerIP);
-  delay(500);
-}
-
-
-/*__________________________________________________________LOOP__________________________________________________________*/
-
-const unsigned long intervalNTP = ONE_HOUR; // Update the time every hour
-unsigned long prevNTP = 0;
-unsigned long lastNTPResponse = millis();
-
-const unsigned long intervalTemp = 6000;   // Do a temperature measurement every minute
-unsigned long prevTemp = 0;
-bool tmpRequested = false;
-const unsigned long DS_delay = 750;         // Reading the temperature from the DS18x20 can take up to 750ms
-
-uint32_t timeUNIX = 0;                      // The most recent timestamp received from the time server
-
-void loop() {
-
-
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - prevNTP > intervalNTP) { // Request the time from the time server every hour
-    prevNTP = currentMillis;
-    sendNTPpacket(timeServerIP);
-  }
-
-  uint32_t time = getTime();                   // Check if the time server has responded, if so, get the UNIX time
-  if (time) {
-    timeUNIX = time;
-    Serial.print("NTP response:\t");
-    Serial.println(timeUNIX);
-    lastNTPResponse = millis();
-  } else if ((millis() - lastNTPResponse) > 24UL * ONE_HOUR) {
-    Serial.println("More than 24 hours since last NTP response. Rebooting.");
-    Serial.flush();
-    ESP.restart();
-  }
-
-  if (timeUNIX != 0) {
-    if (currentMillis - prevTemp > intervalTemp) {  // Every minute, request the temperature
-
-      //tempSensors.requestTemperatures(); // Request the temperature from the sensor (it takes some time to read it)
-      tmpRequested = true;
-      prevTemp = currentMillis;
-      Serial.println("Temperature requested");
-    }
-    
-    if (currentMillis - prevTemp > DS_delay && tmpRequested) { // 750 ms after requesting the temperature
-      uint32_t actualTime = timeUNIX + (currentMillis - lastNTPResponse) / 1000;
-      // The actual time is the last NTP time plus the time that has elapsed since the last NTP response
-      tmpRequested = false;
-      //float temp = tempSensors.getTempCByIndex(0); // Get the temperature from the sensor
-
-      h = dht.readHumidity();
-      t = dht.readTemperature();
-      delay(3000);
-      h = dht.readHumidity(); // read twice to avoid nans
-      t = dht.readTemperature();
-
-      int humidity =  analogRead(0);
-
-      if (humidity>humiditylimit && (actualTime-lastwater)>waitingtime){
-        // change here when using multiple soil humidity sensors with multiple if cases testing each sensor
-         water_plants("1",waterduration);
-
-         lastwater=actualTime;
-         changeConfig("lastwater",lastwater);
-        }
-
-      Serial.printf("Appending parameters to file at time: %lu, \n", actualTime);
-      Serial.printf("Humidity: %s \n",String(humidity));
-      Serial.printf("Humidity: %s \n",String(t));
-      Serial.printf("Humidity: %s \n",String(h));
-
-      File tempLog = SPIFFS.open("/data.csv", "a"); // Write the time and the temperature to the csv file
-      tempLog.print(actualTime);
-      tempLog.print(',');
-      tempLog.print(t);
-      tempLog.print(',');
-      tempLog.print(h);
-      tempLog.print(',');
-      tempLog.println(humidity);
-      int filesize = tempLog.size();
-      Serial.printf("Size of /data.csv: %s \n",String(filesize));
-      tempLog.close();
-
-      if(filesize>1500000){
-        //remove data if file gets to big, can be done better by deleting just the oldest data
-        Serial.println("Deleted data file because it was too big \n");
-        SPIFFS.remove("/data.csv");
-        }
-    } // end reading data from DHT
-  } else {                                    // If we didn't receive an NTP response yet, send another request
-    sendNTPpacket(timeServerIP);
-    delay(500);
-  }
-
-//WiFiClient client = server.available();     // listen for incoming clients
-  ArduinoOTA.handle();                        // listen for OTA events
-} // end loop
-
-
 
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
 
@@ -565,9 +496,10 @@ void water_plants(String plant, int duration) {
          //digitalWrite(D2, 1); // switch all valves
          //digitalWrite(D3, 1); // switch all valves
          //delay(250); //wait
-        //digitalWrite(D1, 1); // turn on pump
+         digitalWrite(D1, 1); // turn on pump
          delay(duration*250);
-        //digitalWrite(D1, 0);
+         digitalWrite(D1, 0);
+         Serial.printf("Plant %s watered for %d seconds \n", plant, duration);
       }
 
 if (plant == "2") {
@@ -668,40 +600,24 @@ void changeConfig(String key,int var){
 
 
 void handleSetHumidity() {
-
-if (server.arg("humidity")== ""){     //Parameter not found
-
-server.send(200, "text/plain", "Argument not found");          //Returns the HTTP response
-
-}else{     //Parameter found
-
-humiditylimit = server.arg("humidity").toInt();     //Gets the value of the query parameter
-
-changeConfig("humiditylimit",humiditylimit);
-
-server.send(200, "text/plain", "OK_"+String(humiditylimit));          //Returns the HTTP response
+  if (server.arg("humidity")== ""){     //Parameter not found
+    server.send(200, "text/plain", "Argument not found");          //Returns the HTTP response
+  } else {     //Parameter found
+    humiditylimit = server.arg("humidity").toInt();     //Gets the value of the query parameter
+    changeConfig("Humidity limit changed in config to: ",humiditylimit);
+    server.send(200, "text/plain", "OK_"+String(humiditylimit));          //Returns the HTTP response
+  }
 }
-
-}
-
 
 void handleSetWaterDuration() {
-
-if (server.arg("duration")== ""){     //Parameter not found
-
-server.send(200, "text/plain", "Argument not found");          //Returns the HTTP response
-
-}else{     //Parameter found
-
-waterduration = server.arg("duration").toInt();     //Gets the value of the query parameter
-
-changeConfig("waterduration",waterduration);
-
-server.send(200, "text/plain", "OK_"+String(waterduration));          //Returns the HTTP response
+  if (server.arg("duration")== ""){     //Parameter not found
+    server.send(200, "text/plain", "Argument not found");          //Returns the HTTP response
+  }else{     //Parameter found
+    waterduration = server.arg("duration").toInt();     //Gets the value of the query parameter
+    changeConfig("Water duration changed in config to",waterduration);
+    server.send(200, "text/plain", "OK_"+String(waterduration));          //Returns the HTTP response
+  }
 }
-
-}
-
 
 void handleSetWaiting() {
 
@@ -719,3 +635,135 @@ server.send(200, "text/plain", "OK_"+String(waitingtime));          //Returns th
 }
 
 }
+
+void setup() {
+  pinMode(led, OUTPUT);
+  digitalWrite(led, 0);
+  Serial.begin(115200);        // Start the Serial communication to send messages to the computer
+  delay(10);
+  Serial.println("\r\n");
+
+  dht.begin(); // initalize DHT
+  pinMode(D1, OUTPUT); // initialize pin for pump
+
+  startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
+
+//  startOTA();                  // Start the OTA service
+
+  startSPIFFS();               // Start the SPIFFS and list all contents
+
+  startMDNS();                 // Start the mDNS responder
+
+  startServer();               // Start a HTTP server with a file read handler and an upload handler
+    
+  // Add service to MDNS-SD
+  //MDNS.addService("http", "tcp", 80);
+
+//  startUDP();                  // Start listening for UDP messages to port 123
+
+  WiFi.hostByName(ntpServerName, timeServerIP); // Get the IP address of the NTP server
+  Serial.print("Time server IP:\t");
+  Serial.println(timeServerIP);
+  sendNTPpacket(timeServerIP);
+  delay(500);
+}
+
+
+/*__________________________________________________________LOOP__________________________________________________________*/
+
+const unsigned long intervalNTP = ONE_HOUR; // Update the time every hour
+unsigned long prevNTP = 0;
+unsigned long lastNTPResponse = millis();
+
+const unsigned long intervalTemp = 6000;   // Do a temperature measurement every minute
+unsigned long prevTemp = 0;
+bool tmpRequested = false;
+const unsigned long DS_delay = 750;         // Reading the temperature from the DS18x20 can take up to 750ms
+
+uint32_t timeUNIX = 0;                      // The most recent timestamp received from the time server
+
+void loop() {
+
+
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - prevNTP > intervalNTP) { // Request the time from the time server every hour
+    prevNTP = currentMillis;
+    sendNTPpacket(timeServerIP);
+  }
+
+  uint32_t time = getTime();                   // Check if the time server has responded, if so, get the UNIX time
+  if (time) {
+    timeUNIX = time;
+    Serial.print("NTP response:\t");
+    Serial.println(timeUNIX);
+    lastNTPResponse = millis();
+  } else if ((millis() - lastNTPResponse) > 24UL * ONE_HOUR) {
+    Serial.println("More than 24 hours since last NTP response. Rebooting.");
+    Serial.flush();
+    ESP.restart();
+  }
+
+  if (timeUNIX != 0) {
+    if (currentMillis - prevTemp > intervalTemp) {  // Every minute, request the temperature
+
+      //tempSensors.requestTemperatures(); // Request the temperature from the sensor (it takes some time to read it)
+      tmpRequested = true;
+      prevTemp = currentMillis;
+      Serial.println("Temperature requested");
+    }
+    
+    if (currentMillis - prevTemp > DS_delay && tmpRequested) { // 750 ms after requesting the temperature
+      uint32_t actualTime = timeUNIX + (currentMillis - lastNTPResponse) / 1000;
+      // The actual time is the last NTP time plus the time that has elapsed since the last NTP response
+      tmpRequested = false;
+      //float temp = tempSensors.getTempCByIndex(0); // Get the temperature from the sensor
+
+      h = dht.readHumidity();
+      t = dht.readTemperature();
+      delay(3000);
+      h = dht.readHumidity(); // read twice to avoid nans
+      t = dht.readTemperature();
+
+      int humidity =  analogRead(0);
+
+      if (humidity>humiditylimit && (actualTime-lastwater)>waitingtime){
+        // change here when using multiple soil humidity sensors with multiple if cases testing each sensor
+         water_plants("1",waterduration);
+
+         lastwater=actualTime;
+         changeConfig("lastwater",lastwater);
+        }
+
+      Serial.printf("Appending parameters to file at time: %lu, \n", actualTime);
+      Serial.printf("Soil Humidity: %s \n",String(humidity));
+      Serial.printf("Air Temperature: %s \n",String(t));
+      Serial.printf("Air Humidity: %s \n",String(h));
+
+      File tempLog = SPIFFS.open("/data.csv", "a"); // Write the time and the temperature to the csv file
+      tempLog.print(actualTime);
+      tempLog.print(',');
+      tempLog.print(t);
+      tempLog.print(',');
+      tempLog.print(h);
+      tempLog.print(',');
+      tempLog.println(humidity);
+      int filesize = tempLog.size();
+      Serial.printf("Size of /data.csv: %s \n",String(filesize));
+      tempLog.close();
+
+      if(filesize>1500000){
+        //remove data if file gets to big, can be done better by deleting just the oldest data
+        Serial.println("Deleted data file because it was too big \n");
+        SPIFFS.remove("/data.csv");
+        }
+    } // end reading data from DHT
+  } else {                                    // If we didn't receive an NTP response yet, send another request
+    sendNTPpacket(timeServerIP);
+    delay(500);
+  }
+
+  // WiFiClient client = server.available();     // listen for incoming clients
+  server.handleClient();
+  // ArduinoOTA.handle();                        // listen for OTA events
+} // end loop
