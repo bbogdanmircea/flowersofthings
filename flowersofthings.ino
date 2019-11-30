@@ -28,6 +28,7 @@ DHT dht(DHTPIN, DHTTYPE); // DHT sensor declaration
 float h = 0;  // variable for air humidity
 float t = 0; // variable for air temperature
 
+bool humidity_sensor_fail = false;
 int humiditylimit = 750;  // soil humidity threshold - when to water
 int waterduration = 10; // how long should one watering period last
 int waitingtime = 30; // how long should be waited after one watering
@@ -740,6 +741,16 @@ void loop() {
       // The actual time is the last NTP time plus the time that has elapsed since the last NTP response
       tmpRequested = false;
       //float temp = tempSensors.getTempCByIndex(0); // Get the temperature from the sensor
+      if (humidity_sensor_fail == false) {
+        if (currentMillis%60 == 0) {
+          Serial.printf("Remaining time until next watering = %d minutes \n", (waitingtime-(actualTime-lastwater))/60);
+        }
+      } else {
+        Serial.printf("Elapsed time= %d\n", (1800-(actualTime-lastwater)));
+        if (currentMillis%60 == 0) {
+          Serial.printf("Remaining time until next watering = %d minutes \n", (1800-(actualTime-lastwater))/60);
+        }        
+      }
 
       h = dht.readHumidity();
       t = dht.readTemperature();
@@ -748,14 +759,23 @@ void loop() {
       t = dht.readTemperature();
 
       int humidity =  analogRead(0);
+      if (humidity >= 4000) {
+        Serial.printf("Humidity read from sensor = %d is not OK \n", humidity);
+        Serial.println("Watering will be done every 30 minutes");
+        humidity_sensor_fail = true;
+      }
 
-      if (humidity>humiditylimit && (actualTime-lastwater)>waitingtime){
+      if (humidity_sensor_fail == false && humidity>humiditylimit && (actualTime-lastwater)>waitingtime){
         // change here when using multiple soil humidity sensors with multiple if cases testing each sensor
          water_plants("1",waterduration);
-
          lastwater=actualTime;
          changeConfig("lastwater",lastwater);
-        }
+      } else if (humidity_sensor_fail == true && (actualTime-lastwater)> 1800) {
+         water_plants("1",waterduration);
+         lastwater=actualTime;
+         changeConfig("lastwater",lastwater);
+         Serial.printf("Remaining time until next watering = %d minutes \n", (1800-(actualTime-lastwater))/60);
+      }
 
       Serial.printf("Appending parameters to file at time: %lu, \n", actualTime);
       Serial.printf("Soil Humidity: %s \n",String(humidity));
