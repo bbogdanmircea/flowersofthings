@@ -159,26 +159,42 @@ bool loadConfig() {
   if (size > 1024) {
     Serial.println("Config file size is too large");
     return false;
+  } else {
+    Serial.printf("Config file size is %d \n", size);
   }
 
   // Allocate a buffer to store contents of the file.
-  std::unique_ptr<char[]> buf(new char[size]);
+  uint8_t buf[100];
 
   // We don't use String here because ArduinoJson library requires the input
   // buffer to be mutable. If you don't use ArduinoJson, you may as well
   // use configFile.readString instead.
-  configFile.readBytes(buf.get(), size);
 
-//  StaticJsonBuffer<200> jsonBuffer;
-//  JsonObject& json = jsonBuffer.parseObject(buf.get());
-//
-//  if (!json.success()) {
-//    Serial.println("Failed to parse config file");
-//    return false;
-//  }
-  JsonObject json;
+  //Reading doesn't work
+  configFile.read(buf, size);
+  for (uint8_t i = 0; i < size; i++) {
+    Serial.write(configFile.read());
+  }
+  Serial.printf("config.json = %s \n", buf);
+  StaticJsonDocument<300> doc;
+  // use this variable just to check the JSon is working ok
+  char json[] =
+      /*"{\"sensor\":\"gps\",\"time\":1351824120,\"data\":[48.756080,2.302038]}";*/
+      "{\"humiditylimit\":\"751\",\"waterduration\":\"11\",\"waitingtime\":\"31\",\"lastwater\":\"1\"}";
+  // Deserialize the JSON document
+  // evetually json needs to be replace with buf
+  DeserializationError error = deserializeJson(doc, json);
 
-  const String hl = json["humiditylimit"];
+  // Fetch values.
+  //
+  // Most of the time, you can rely on the implicit casts.
+  // In other case, you can do doc["time"].as<long>();
+  const char* sensor = doc["sensor"];
+  long time = doc["time"];
+  double latitude = doc["data"][0];
+  double longitude = doc["data"][1];
+
+  const String hl = doc["humiditylimit"];
   int humiditylimit_tmp = hl.toInt(); // read humididty limit from json
   if (humiditylimit_tmp == 0) {
     Serial.printf("Humidity limit read = %d not valid \n", humiditylimit_tmp);
@@ -189,7 +205,7 @@ bool loadConfig() {
     Serial.printf("Humidity limit default set to = %d \n", humiditylimit);    
   }
 
- const String wd = json["waterduration"]; // read waterduration from json
+ const String wd = doc["waterduration"]; // read waterduration from json
   int waterduration_tmp = wd.toInt();
   if (waterduration_tmp == 0) {
     Serial.printf("Water duration limit read = %d not valid \n", waterduration_tmp);
@@ -200,7 +216,7 @@ bool loadConfig() {
     Serial.printf("Water duration default set to = %d \n", waterduration);    
   }
 
-const String wt = json["waitingtime"]; // read waitingtime from json
+const String wt = doc["waitingtime"]; // read waitingtime from json
   int waitingtime_tmp = wt.toInt();
   if (waitingtime_tmp == 0) {
     Serial.printf("Waiting time limit read = %d not valid \n", waitingtime_tmp);
@@ -211,7 +227,7 @@ const String wt = json["waitingtime"]; // read waitingtime from json
     Serial.printf("Waiting time default set to = %d \n", waitingtime);    
   }
 
-const String lw = json["lastwater"];
+const String lw = doc["lastwater"];
   int lastwater_tmp = lw.toInt();
   if (lastwater_tmp == 0) {
     Serial.printf("Last water limit read = %d not valid \n", lastwater_tmp);
@@ -376,6 +392,8 @@ void startSPIFFS() { // Start the SPIFFS and list all contents
 //  } else {
 //    Serial.println("Config saved");
 //  }
+  // for some reason /config.json can't be read ????
+  readFile(SPIFFS, "/config.json");
 
   if (!loadConfig()) {
     Serial.println("Failed to load config");
@@ -499,7 +517,11 @@ void water_plants(String plant, int duration) {
          digitalWrite(D1, 1); // turn on pump
          delay(duration*250);
          digitalWrite(D1, 0);
+         Serial.println();
+         Serial.println("*********************************************************");
          Serial.printf("Plant %s watered for %d seconds \n", plant, duration);
+         Serial.println("*********************************************************");
+         Serial.println();
       }
 
 if (plant == "2") {
