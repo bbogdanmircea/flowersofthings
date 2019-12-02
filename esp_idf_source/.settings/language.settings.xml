@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <project>
     	
-    <configuration id="com.espressif.esp32.managedbuild.cross.toolchain.base.1058673797" name="Default">
+    <configuration id="com.espressif.esp32.managedbuild.cross.toolchain.base.515584107" name="Default">
         		
         <extension point="org.eclipse.cdt.core.LanguageSettingsProvider">
             			
