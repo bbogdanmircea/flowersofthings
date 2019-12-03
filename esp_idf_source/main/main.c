@@ -1,79 +1,103 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_event_loop.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_event_loop.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 
-#define MAX_APs 20
+#define WIFI_SSID "TP-LINK_8EFC"
+#define WIFI_PASS "ABCDEFGHIJ"
 
 
-// From auth_mode code to string
-static char* getAuthModeName(wifi_auth_mode_t auth_mode) {
-	
-	char *names[] = {"OPEN", "WEP", "WPA PSK", "WPA2 PSK", "WPA WPA2 PSK", "MAX"};
-	return names[auth_mode];
-}
+// Event group
+static EventGroupHandle_t wifi_event_group;
+const int CONNECTED_BIT = BIT0;
 
-// Empty event handler
+
+// Wifi event handler
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-    return ESP_OK;
-}
+    switch(event->event_id) {
 
-// Empty infinite task
-void loop_task(void *pvParameter)
-{
-    while(1) { 
-		vTaskDelay(1000 / portTICK_RATE_MS);		
+    case SYSTEM_EVENT_STA_START:
+        esp_wifi_connect();
+        break;
+
+	case SYSTEM_EVENT_STA_GOT_IP:
+        xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+        break;
+
+	case SYSTEM_EVENT_STA_DISCONNECTED:
+		xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+        break;
+
+	default:
+        break;
     }
+
+	return ESP_OK;
 }
 
 
+// Main task
+void main_task(void *pvParameter)
+{
+	// wait for connection
+	printf("Main task: waiting for connection to the wifi network... ");
+	xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+	printf("connected!\n");
+
+	// print the local IP address
+	tcpip_adapter_ip_info_t ip_info;
+	ESP_ERROR_CHECK(tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info));
+	printf("IP Address:  %s\n", ip4addr_ntoa(&ip_info.ip));
+	printf("Subnet mask: %s\n", ip4addr_ntoa(&ip_info.netmask));
+	printf("Gateway:     %s\n", ip4addr_ntoa(&ip_info.gw));
+
+	while(1) {
+		vTaskDelay(1000 / portTICK_RATE_MS);
+	}
+}
+
+
+// Main application
 void app_main()
 {
+	// disable the default wifi logging
+	esp_log_level_set("wifi", ESP_LOG_NONE);
+
 	// initialize NVS
 	ESP_ERROR_CHECK(nvs_flash_init());
 	
+	// create the event group to handle wifi events
+	wifi_event_group = xEventGroupCreate();
+
 	// initialize the tcp stack
 	tcpip_adapter_init();
 
 	// initialize the wifi event handler
 	ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
 	
-	// configure, initialize and start the wifi driver
-	wifi_init_config_t wifi_config = WIFI_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_wifi_init(&wifi_config));
+	// initialize the wifi stack in STAtion mode with config in RAM
+	wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
+	ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_config));
+	ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-	ESP_ERROR_CHECK(esp_wifi_start());
-	
-	// configure and run the scan process in blocking mode
-	wifi_scan_config_t scan_config = {
-		.ssid = 0,
-		.bssid = 0,
-		.channel = 0,
-        .show_hidden = true
+
+	// configure the wifi connection and start the interface
+	wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+        },
     };
-	printf("Start scanning...");
-	ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-	printf(" completed!\n");
-	printf("\n");
-		
-	// get the list of APs found in the last scan
-	uint16_t ap_num = MAX_APs;
-	wifi_ap_record_t ap_records[MAX_APs];
-	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+	ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+	printf("Connecting to %s\n", WIFI_SSID);
 	
-	// print the list 
-	printf("Found %d access points:\n", ap_num);
-	printf("\n");
-	printf("               SSID              | Channel | RSSI |   Auth Mode \n");
-	printf("----------------------------------------------------------------\n");
-	for(int i = 0; i < ap_num; i++)
-		printf("%32s | %7d | %4d | %12s\n", (char *)ap_records[i].ssid, ap_records[i].primary, ap_records[i].rssi, getAuthModeName(ap_records[i].authmode));
-	printf("----------------------------------------------------------------\n");
-	
-	// infinite loop
-	xTaskCreate(&loop_task, "loop_task", 2048, NULL, 5, NULL);
+	// start the main task
+    xTaskCreate(&main_task, "main_task", 2048, NULL, 5, NULL);
 }
