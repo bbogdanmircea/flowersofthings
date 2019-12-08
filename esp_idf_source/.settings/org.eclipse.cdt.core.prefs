@@ -4,3 +4,8 @@ environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.105867
 environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.1058673797/IDF_PATH/value=c\:\\msys32\\home\\Ramona\\esp-idf\\
 environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.1058673797/append=true
 environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.1058673797/appendContributed=true
+environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.515584107/IDF_PATH/delimiter=;
+environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.515584107/IDF_PATH/operation=replace
+environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.515584107/IDF_PATH/value=c\:\\msys32\\home\\Ramona\\esp-idf\\
+environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.515584107/append=true
+environment/project/com.espressif.esp32.managedbuild.cross.toolchain.base.515584107/appendContributed=true
