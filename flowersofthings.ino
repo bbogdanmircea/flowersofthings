@@ -15,7 +15,7 @@
 #define ONE_HOUR 3600000UL
 #include "DHT.h"
 #define DHTPIN 13     // what digital pin the DHT22 is connected to
-#define D1 2 // pin for Pump1 on LED0
+#define D1 4 // pin for Pump1 on GPIO4
 #define DHTTYPE DHT22   // there are multiple kinds of DHT sensors
 
 const int led = 2;  // LED0 on board is connected to pin D2
@@ -794,11 +794,14 @@ void loop() {
       Serial.printf("Size of /data.csv: %s \n",String(filesize));
       tempLog.close();
 
-      if(filesize>1500000){
+      if(filesize>500000){
         //remove data if file gets to big, can be done better by deleting just the oldest data
         Serial.println("Deleted data file because it was too big \n");
         SPIFFS.remove("/data.csv");
         }
+      if(filesize>480000){ //toggle status LED when it is time to save the data.csv
+        digitalWrite(led, !digitalRead(led));
+        }      
     } // end reading data from DHT
   } else {                                    // If we didn't receive an NTP response yet, send another request
     sendNTPpacket(timeServerIP);
